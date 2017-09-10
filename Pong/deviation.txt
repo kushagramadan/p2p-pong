@@ -1,0 +1,1 @@
+Rather than taking average of all the positions of ball from each player, which causes a sudeen speed and position change, we are hosting the postion of baal on one machine. This "host" machine will send the ball's postion and velocity to other active machines. If the host disconnects itself from the game then the host automaticaally shifts to next machine.

@@ -1,0 +1,1111 @@
+
+
+import javax.swing.JPanel;
+import javax.swing.JOptionPane;
+import java.awt.Color;
+import java.awt.Graphics;
+import java.awt.*;
+import javax.imageio.ImageIO;
+
+import java.awt.event.MouseListener;
+import java.awt.Toolkit;
+import java.awt.event.MouseEvent;
+import java.awt.Polygon;
+import java.awt.Graphics;
+import java.awt.Color;
+import java.awt.Dimension;
+import java.awt.EventQueue;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.Polygon;
+import java.awt.geom.Path2D;
+import java.awt.geom.Point2D;
+import java.awt.event.ActionListener;
+import java.awt.event.ActionEvent;
+
+import java.awt.event.KeyListener;
+import java.awt.event.KeyEvent;
+
+import java.io.*;
+import java.net.*;
+
+public class Pong extends JPanel implements ActionListener, MouseListener, KeyListener {
+	// Proprietà della palla
+	private static final int RADIUS = 10; // Raggio
+	private static int START_SPEED = 6; // Velocità iniziale
+	private static final int ACCELERATION = 125; // Ogni quanti frame aumenta di 1 pixel la velocità 
+
+	// Proprietà dei carrelli
+	private static final int SPEED = 12; // Velocità dei carrelli
+	private int HEIGHT = 50; // SEMI-altezza del carrello
+	private static final int WIDTH = 20;
+	private static final int TOLERANCE = 5;
+	private static final int PADDING = 0;
+
+	//Triangle properties
+	private static final int TRIANGLE_SIZE = 50;
+	private Image backgroundImage;	
+	public Player player1;
+	public Player player2;
+	public Player player3;
+	public Player player4;
+	
+	private boolean new_game = true;
+	
+	public int ball_x;
+	private int ball_y;
+	public double ball_x_speed;
+	public double ball_y_speed;
+	
+	public boolean acceleration = true;
+	private int ball_acceleration_count;
+	
+	private boolean mouse_inside = false;
+	private boolean key_up = false;
+	private boolean key_down = false;
+	private boolean key_left = false;
+	private boolean key_right = false;
+	private boolean springHit = false;
+	private int numberOfSpringHits = 3;
+	private boolean paddle_size = false, increased_once=false;
+	private int numberOfframes=0;
+	private int maxNumberOfFrames = 10000;
+	public String [] udpPosition;
+	public int [] springHitsLeft;
+	public int p1SpringHitsLeft, p2SpringHitsLeft, p3SpringHitsLeft, p4SpringHitsLeft;
+	public int [] scores;
+	public boolean [] isExtended;
+	public String externalBallX = Integer.toString(getWidth()/2);
+	public String externalBallY = Integer.toString(getHeight()/2);
+	public String externalBallSpeedX = "0.0";
+	public String externalBallSpeedY = "0.0";
+	public String playerNum;
+	public String currentServer;
+	private TriangleShape triangleShape1;
+	private TriangleShape triangleShape2;
+	private TriangleShape triangleShape3;
+	private TriangleShape triangleShape4;	
+
+	public MulticastSocket s;
+	public InetAddress group;
+	
+	// Constructor
+	public Pong (int p1_type, int p2_type, int p3_type, int p4_type, String playNum, String currServer) {
+		super ();
+		setBackground (new Color (215, 91, 19));
+		numberOfframes=0;
+		player1 = new Player (p1_type);
+		player2 = new Player (p2_type);
+		player3 = new Player (p3_type);
+		player4 = new Player (p4_type);
+		playerNum = playNum;
+		currentServer = currServer;
+		udpPosition = new String[4];
+		springHitsLeft = new int[4];
+		scores = new int[4];
+		isExtended = new boolean[4];
+		try{
+			backgroundImage = ImageIO.read(new File("final.jpg"));
+		}catch(IOException e){System.out.println("Image not found!");}
+		for(int i = 0; i<4; i++)
+		{
+			udpPosition[i] = "100";
+		}
+		for(int i = 0; i<4; i++)
+		{
+			springHitsLeft[i] = numberOfSpringHits;
+		}
+		p1SpringHitsLeft = numberOfSpringHits;
+		p2SpringHitsLeft = numberOfSpringHits;
+		p3SpringHitsLeft = numberOfSpringHits;
+		p4SpringHitsLeft = numberOfSpringHits;
+		for(int i = 0; i<4; i++)
+		{
+			scores[i] = 0;
+		}
+		for(int i = 0; i<4; i++)
+		{
+			isExtended[i] = false;
+		}
+		try{
+			s = new MulticastSocket(1234);
+        	group = InetAddress.getByName("228.6.7.8");                     
+        	s.setReuseAddress(true);             
+        	s.setLoopbackMode(false);                  
+        	s.setTimeToLive(2);                  
+        	s.joinGroup(group);
+    	}catch(Exception e){System.out.println("Constructor Exception!");}
+	}
+	
+	// Compute destination of the paddle
+	private void computeDestinationX (Player player) {
+		int base;
+		if (ball_x_speed > 0)
+			player.destination = ball_y + (getWidth() - PADDING - WIDTH - RADIUS - ball_x) * (int)((ball_y_speed) /(ball_x_speed));
+		else if(ball_x_speed != 0)
+			player.destination = ball_y - (ball_x - PADDING - WIDTH - RADIUS) * (int)((ball_y_speed) / (ball_x_speed));
+		else 
+			player.destination = ball_y;
+		
+		if (player.destination <=HEIGHT+TRIANGLE_SIZE +PADDING)
+			//player.destination = 2 * PADDING - player.destination;
+			player.destination = HEIGHT+TRIANGLE_SIZE +PADDING;
+		
+		if (player.destination >= getHeight() - HEIGHT- TRIANGLE_SIZE - PADDING) {
+			player.destination -= RADIUS;
+			if ((player.destination / (getHeight() - 2 * RADIUS)) % 2 == 0)
+				player.destination = player.destination % (getHeight () - 2 * RADIUS);
+			else
+				player.destination = getHeight() - 2 * RADIUS - player.destination % (getHeight () - 2 * RADIUS);
+			player.destination += RADIUS;
+		}
+	}
+
+	private void computeDestinationY (Player player) {
+		int base;
+		if (ball_y_speed > 0)
+			player.destination = ball_x + (getHeight() - PADDING - WIDTH - RADIUS - ball_y) * (int)((ball_x_speed) / (ball_y_speed));
+		else if(ball_y_speed != 0)
+			player.destination = ball_x - (ball_y - PADDING - WIDTH - RADIUS) * (int)((ball_x_speed) /(ball_y_speed));
+		else
+			player.destination = ball_x ;
+
+		if (player.destination <= HEIGHT+TRIANGLE_SIZE+PADDING)
+			player.destination =  HEIGHT+TRIANGLE_SIZE +PADDING;
+
+		if (player.destination > getWidth() -HEIGHT+ TRIANGLE_SIZE+ PADDING) {
+			player.destination -= RADIUS;
+			if ((player.destination / (getWidth() - 2 * RADIUS)) % 2 == 0)
+				player.destination = player.destination % (getWidth () - 2 * RADIUS);
+			else
+				player.destination = getWidth() - 2 * RADIUS - player.destination % (getWidth () - 2 * RADIUS);
+			player.destination += RADIUS;
+		}
+	}
+	
+	// Set new position of the player
+	private void movePlayer (Player player, int destination,boolean width) {
+		int distance = Math.abs (player.position - destination);
+		int max_destination;
+		if(width)
+			max_destination=getWidth();
+		else
+			max_destination=getHeight();
+		if (distance != 0) {
+			int direction = - (player.position - destination) / distance;
+			
+			if (distance > SPEED)
+				distance = SPEED;
+			
+			player.position += direction * distance;
+			//int height= HEIGHT+10*player.getHeight();
+			int height=HEIGHT;
+			if((player.equals(player1) && isExtended[0]) || (player.equals(player2) && isExtended[1]) || (player.equals(player3) && isExtended[2]) || (player.equals(player4) && isExtended[3]))
+				height=HEIGHT+30;
+			//System.out.println("Move height "+height);
+			if (player.position - height- TRIANGLE_SIZE - PADDING < 0)
+				player.position = height+ TRIANGLE_SIZE +PADDING;
+			if (player.position + height+ TRIANGLE_SIZE +PADDING > max_destination)
+				player.position = max_destination - height- TRIANGLE_SIZE - PADDING;
+		}
+	}
+	
+	// Compute player position
+	private void computePosition (Player player,boolean width, String playerNum) {
+
+		// MOUSE
+		if (player.getType() == Player.MOUSE) {
+			if (mouse_inside) {
+				int cursor = getMousePosition().y;
+				movePlayer (player, cursor,width);
+			}
+		}
+		// KEYBOARD
+		else if (player.getType() == Player.KEYBOARD) {
+			if(playerNum.equals("p1") || playerNum.equals("p2"))
+			{
+				if (key_up && !key_down) {
+					movePlayer (player, player.position - SPEED,width);
+				}
+				else if (key_down && !key_up) {
+					movePlayer (player, player.position + SPEED,width);
+				}
+			}
+			else
+			{
+				if (key_left && !key_right) {
+				movePlayer (player, player.position - SPEED,width);
+				}
+				else if (key_right && !key_left) {
+				movePlayer (player, player.position + SPEED,width);
+				}
+			}
+			
+		}
+
+			/*try{
+			MulticastSocket s = new MulticastSocket(1234);
+            InetAddress group = InetAddress.getByName("228.6.7.8");                     
+            s.setReuseAddress(true);             
+            s.setLoopbackMode(false);                  
+            s.setTimeToLive(2);                  
+            s.joinGroup(group);
+            String data = Integer.toString(player.position);
+            DatagramPacket dp = new DatagramPacket(data.getBytes(), data.length(),group, 1234);
+            s.send(dp);
+            //System.out.println("Packet sent!!");
+      		}
+      		catch(Exception e){System.out.println("exceptionnnnn!");}*/
+		//UDP
+		/*else if (player.getType() == Player.UDP) {
+			movePlayer(player,Integer.parseInt(udpPosition));
+		}*/
+		// CPU HARD
+		else if (player.getType() == Player.CPU_HARD_X || player.getType() == Player.CPU_HARD_Y) {
+			movePlayer (player, player.destination,width);
+		}
+		// CPU EASY
+		else if (player.getType() == Player.CPU_EASY_X || player.getType() == Player.CPU_EASY_Y) {
+			movePlayer (player, ball_y,width);
+		}
+	}
+
+	public int getBallPos(String value)
+	{
+		return Integer.parseInt(value);
+	}
+
+	public void setPlayerToAI(String playerNo)
+	{
+		if(playerNo.equals("p1"))
+		{
+			player1.setType(Player.CPU_HARD_X);
+		}
+		else if(playerNo.equals("p2"))
+		{
+			player2.setType(Player.CPU_HARD_X);
+		}
+		else if(playerNo.equals("p3"))
+		{
+			player3.setType(Player.CPU_HARD_Y);
+		}
+		else if(playerNo.equals("p4"))
+		{
+			player4.setType(Player.CPU_HARD_Y);
+		}
+	}
+
+	public int getPosition(String playerNo)
+	{
+		if(playerNo.equals("p1"))
+			return player1.position;
+		else if(playerNo.equals("p2"))
+			return player2.position;
+		else if(playerNo.equals("p3"))
+			return player3.position;
+		else
+			return player4.position;
+	}
+
+	public int getPlayerSprintHits(String playerNo)
+	{
+		if(playerNo.equals("p1"))
+			return p1SpringHitsLeft;
+		else if(playerNo.equals("p2"))
+			return p2SpringHitsLeft;
+		else if(playerNo.equals("p3"))
+			return p3SpringHitsLeft;
+		else
+			return p4SpringHitsLeft;
+	}
+
+	public int getPlayerNum(String playerNo)
+	{
+		if(playerNo.equals("p1"))
+			return 0;
+		else if(playerNo.equals("p2"))
+			return 1;
+		else if(playerNo.equals("p3"))
+			return 2;
+		else
+			return 3;
+	}
+	
+	// Draw
+	public void paintComponent (Graphics g) {
+	//	System.out.println("Spring hits left : "+ p1SpringHitsLeft + p2SpringHitsLeft + p3SpringHitsLeft + p4SpringHitsLeft);
+		Toolkit.getDefaultToolkit().sync();
+		acceleration=true;
+		super.paintComponent (g);
+		g.drawImage(backgroundImage, 0, 0, this);
+		//System.out.println(ball_x+" "+ball_y);
+		
+		// Prepara il campo di gioco
+		if (new_game) {
+			ball_x = getWidth () / 2;
+			ball_y = getHeight () / 2;
+			//ball_x=getWidth()-RADIUS-4;
+			//ball_y=90;
+			if(playerNum.equals(currentServer))
+			{
+				double phase = Math.random () * Math.PI / 2 - Math.PI / 4;
+				ball_x_speed = (int)(Math.cos (phase) * START_SPEED);
+				//ball_x_speed= 0;
+				ball_y_speed = (int)(Math.sin (phase) * START_SPEED);			
+			}
+			else
+			{
+				ball_x = Integer.parseInt(externalBallX);
+				ball_y = Integer.parseInt(externalBallY);
+				ball_x_speed = Double.parseDouble(externalBallSpeedX);
+				ball_y_speed = Double.parseDouble(externalBallSpeedY);
+			}
+			
+			ball_acceleration_count = 0;
+			
+			if (player1.getType() == Player.CPU_HARD_X || player1.getType() == Player.CPU_EASY_X) {
+				player1.position = getHeight () / 2;
+				computeDestinationX (player1);
+			}
+			if (player2.getType() == Player.CPU_HARD_X || player2.getType() == Player.CPU_EASY_X) {
+				player2.position = getHeight () / 2;
+				computeDestinationX (player2);
+			}
+			if (player3.getType() == Player.CPU_HARD_Y || player3.getType() == Player.CPU_EASY_Y) {
+				player3.position = getWidth () / 2;
+				computeDestinationY (player3);
+			}
+			if (player4.getType() == Player.CPU_HARD_Y || player4.getType() == Player.CPU_EASY_Y) {
+				player4.position = getWidth () / 2;
+				computeDestinationY (player4);
+			}
+			
+			new_game = false;
+		}
+
+		if(player1.getType() == Player.UDP)
+		{
+			movePlayer(player1,Integer.parseInt(udpPosition[0]),false);
+		}
+		if(player2.getType() == Player.UDP)
+		{
+			movePlayer(player2,Integer.parseInt(udpPosition[1]),false);
+		}
+		if(player3.getType() == Player.UDP)
+		{
+			movePlayer(player3,Integer.parseInt(udpPosition[2]),true);
+		}
+		if(player4.getType() == Player.UDP)
+		{
+			movePlayer(player4,Integer.parseInt(udpPosition[3]),true);
+		}
+
+		//ball_x = (ball_x + Integer.parseInt(externalBallX))/2;
+		//ball_y = (ball_y + Integer.parseInt(externalBallY))/2;
+		//ball_x_speed = (ball_x_speed + Double.parseDouble(externalBallSpeedX))/2;
+		//ball_y_speed = (ball_y_speed + Double.parseDouble(externalBallSpeedY))/2;
+		
+		// Calcola la posizione del primo giocatore
+		if (player1.getType() == Player.MOUSE || player1.getType() == Player.KEYBOARD || ball_x_speed < 0)
+			computePosition (player1,false,playerNum);
+		
+		// Calcola la posizione del secondo giocatore
+		if (player2.getType() == Player.MOUSE || player2.getType() == Player.KEYBOARD || ball_x_speed > 0)
+			computePosition (player2,false,playerNum);
+
+		if (player3.getType() == Player.MOUSE || player3.getType() == Player.KEYBOARD || ball_y_speed < 0)
+			computePosition (player3,true,playerNum);
+		
+		// Calcola la posizione del secondo giocatore
+		if (player4.getType() == Player.MOUSE || player4.getType() == Player.KEYBOARD || ball_y_speed > 0)
+			computePosition (player4,true,playerNum);
+
+		
+		// Calcola la posizione della pallina
+		if(playerNum.equals(currentServer))
+		{
+			ball_x += ball_x_speed;
+			ball_y += ball_y_speed;
+		}
+		else
+		{
+			ball_x = Integer.parseInt(externalBallX);
+			ball_y = Integer.parseInt(externalBallY);
+			ball_x_speed = Double.parseDouble(externalBallSpeedX);
+			ball_y_speed = Double.parseDouble(externalBallSpeedY);
+			//ball_x += ball_x_speed;
+			//ball_y += ball_y_speed;
+		}
+
+		//if there is a spring hit
+		if(playerNum.equals(currentServer))
+		{  
+			if(p1SpringHitsLeft>springHitsLeft[0] && p1SpringHitsLeft>0)
+			{
+				System.out.println("!!!!!!!!!!!!!!!!!!!!!!!      SPRING HIT     !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+				ball_x_speed*=1.5;
+				ball_y_speed*=1.5;
+				p1SpringHitsLeft--;
+			}
+			if(p2SpringHitsLeft>springHitsLeft[1] && p2SpringHitsLeft>0)
+			{
+				ball_x_speed*=1.5;
+				ball_y_speed*=1.5;
+				p2SpringHitsLeft--;
+			}
+			if(p3SpringHitsLeft>springHitsLeft[2] && p3SpringHitsLeft>0)
+			{
+				ball_x_speed*=1.5;
+				ball_y_speed*=1.5;
+				p3SpringHitsLeft--;
+			}
+			if(p4SpringHitsLeft>springHitsLeft[3] && p4SpringHitsLeft>0)
+			{
+				ball_x_speed*=1.5;
+				ball_y_speed*=1.5;
+				p4SpringHitsLeft--;
+			}
+		}
+		else
+		{
+			if(p1SpringHitsLeft>springHitsLeft[0] && p1SpringHitsLeft>0)
+			{
+				p1SpringHitsLeft--;
+			}
+			if(p2SpringHitsLeft>springHitsLeft[1] && p2SpringHitsLeft>0)
+			{
+				p2SpringHitsLeft--;
+			}
+			if(p3SpringHitsLeft>springHitsLeft[2] && p3SpringHitsLeft>0)
+			{
+				p3SpringHitsLeft--;
+			}
+			if(p4SpringHitsLeft>springHitsLeft[3] && p4SpringHitsLeft>0)
+			{
+				p4SpringHitsLeft--;
+			}
+		}
+
+		//paddle size;
+		if(paddle_size){
+				numberOfframes++;
+			//System.out.println(paddle_hits);
+		}
+
+		isExtended[getPlayerNum(playerNum)] = (paddle_size && (numberOfframes<=maxNumberOfFrames));
+
+		//if (ball_y_speed < 0) // Hack to fix double-to-int conversion
+		//	ball_y ++;
+		
+		// Acceleration handled here
+		/*if (acceleration) {
+			ball_acceleration_count ++;
+			if (ball_acceleration_count == ACCELERATION) {
+				ball_x_speed = ball_x_speed + (int)ball_x_speed / Math.hypot ((int)ball_x_speed, (int)ball_y_speed) * 2;
+				ball_y_speed = ball_y_speed + (int)ball_y_speed / Math.hypot ((int)ball_x_speed, (int)ball_y_speed) * 2;
+				ball_acceleration_count = 0;
+			}
+		}*/
+			if (acceleration) {
+			ball_acceleration_count ++;
+			if (ball_acceleration_count == ACCELERATION) {
+				//System.out.println("increase x component speed is " +(int)ball_x_speed / Math.hypot ((int)ball_x_speed, (int)ball_y_speed) * 2);
+				//System.out.println("increase y component speed is " +(int)ball_y_speed / Math.hypot ((int)ball_x_speed, (int)ball_y_speed) * 2);
+				//System.out.println("x component speed is " +ball_x_speed);
+				//System.out.println("y component speed is " +ball_y_speed);
+				if (Math.hypot (ball_x_speed, ball_y_speed) >14 ) {acceleration=false;}
+				else {
+				ball_x_speed = ball_x_speed + (int)ball_x_speed / Math.hypot ((int)ball_x_speed, (int)ball_y_speed) * 2;
+				ball_y_speed = ball_y_speed + (int)ball_y_speed / Math.hypot ((int)ball_x_speed, (int)ball_y_speed) * 2;
+				ball_acceleration_count = 0;}
+			}
+		}
+		try{
+			String data = "";
+            //String playerNum = "p1";
+            data = data.concat(playerNum);
+            data = data.concat(" ");
+            String ballX = Integer.toString(ball_x);
+            data = data.concat(ballX);
+            data = data.concat(" ");
+            String ballY = Integer.toString(ball_y);
+            data = data.concat(ballY);
+            data = data.concat(" ");
+            String ballSpeedX = Double.toString(ball_x_speed);
+            data = data.concat(ballSpeedX);
+            data = data.concat(" ");
+            String ballSpeedY = Double.toString(ball_y_speed);
+            data = data.concat(ballSpeedY);
+            data = data.concat(" ");
+            String paddlePos = Integer.toString(getPosition(playerNum));
+            data = data.concat(paddlePos);
+            data = data.concat(" ");
+            String points1 = Integer.toString(player1.points);
+            data = data.concat(points1);
+            data = data.concat(" ");
+            String points2 = Integer.toString(player2.points);
+            data = data.concat(points2);
+            data = data.concat(" ");
+            String points3 = Integer.toString(player3.points);
+            data = data.concat(points3);
+            data = data.concat(" ");
+            String points4 = Integer.toString(player4.points);
+            data = data.concat(points4);
+            data = data.concat(" ");
+            String spHitsLeft = Integer.toString(getPlayerSprintHits(playerNum));
+            data = data.concat(spHitsLeft);
+            data = data.concat(" ");
+            String isExt = Boolean.toString(isExtended[getPlayerNum(playerNum)]);
+            data = data.concat(isExt);
+            DatagramPacket dp = new DatagramPacket(data.getBytes(), data.length(),group, 1234);
+            s.send(dp);
+            //System.out.println(data);
+      		}
+      		catch(Exception e){System.out.println("exceptionnnnn!");}
+      		//for corner cases
+		if((ball_y- ball_x - getHeight()+ TRIANGLE_SIZE+14.2) >=0){
+			System.out.println("Left bottom");
+			//System.out.println(ball_x_speed+" "+ ball_y_speed);
+			double x_temp,y_temp;
+			x_temp= (ball_x_speed+ball_y_speed+ Math.abs(ball_x_speed- ball_y_speed))/2;
+			y_temp = (ball_x_speed+ball_y_speed- Math.abs(ball_x_speed- ball_y_speed))/2;
+			ball_x_speed=x_temp;
+			ball_y_speed = y_temp;
+		//	System.out.println(ball_x_speed+" "+ ball_y_speed);
+			if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+			if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+			if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+			if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+		}
+		else if((ball_y-ball_x+(getWidth()-TRIANGLE_SIZE-14.2))<=0){
+			System.out.println("Right Top");
+		//	System.out.println(ball_x_speed+" "+ ball_y_speed);
+			double x_temp,y_temp;
+			x_temp= (ball_x_speed+ball_y_speed- Math.abs(ball_x_speed- ball_y_speed))/2;
+			y_temp = (ball_x_speed+ball_y_speed+ Math.abs(ball_x_speed- ball_y_speed))/2;
+			ball_x_speed=x_temp;
+			ball_y_speed = y_temp;
+		//	System.out.println(ball_x_speed+" "+ ball_y_speed);
+			if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+			if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+			if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+			if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+		}
+		else if ((ball_x+ball_y- TRIANGLE_SIZE-14.2) <=0) {
+			System.out.println("Left Top");
+			//System.out.println(ball_x_speed+" "+ ball_y_speed);
+			double x_temp,y_temp;
+			x_temp = ((ball_x_speed- ball_y_speed)+Math.abs(ball_x_speed+ ball_y_speed))/2;
+			y_temp = (-1*(ball_x_speed- ball_y_speed)+Math.abs(ball_x_speed+ ball_y_speed))/2;
+			ball_x_speed=x_temp;
+			ball_y_speed = y_temp;
+		//	System.out.println(ball_x_speed+" "+ ball_y_speed);
+			if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+			if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+			if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+			if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+		} 
+		else if((ball_y+ball_x-(getWidth()+getHeight()-TRIANGLE_SIZE-14.2))>=0){
+			System.out.println("Right bottom");
+			//System.out.println(ball_x_speed+" "+ ball_y_speed);
+			double x_temp,y_temp;
+			x_temp = ((ball_x_speed- ball_y_speed)- Math.abs(ball_x_speed+ ball_y_speed))/2;
+			y_temp = ((ball_y_speed- ball_x_speed)-Math.abs(ball_x_speed+ ball_y_speed))/2;
+			ball_x_speed=x_temp;
+			ball_y_speed = y_temp;
+			//System.out.println(ball_x_speed+" "+ ball_y_speed);
+			if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+			if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+			if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+			if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+		} 
+		
+		// Border-collision LEFT
+		//if ((ball_x <= PADDING + WIDTH + RADIUS && ball_y>= player1.position-HEIGHT && ball_y<= player1.position+HEIGHT) || (ball_x >= PADDING + RADIUS) ) {
+		else if ((ball_x <= PADDING + WIDTH + RADIUS)){
+			int collision_point;
+			if(ball_x_speed!=0)
+			collision_point = ball_y + (int)(ball_y_speed / ball_x_speed * (PADDING + WIDTH + RADIUS - ball_x));
+			else 
+			 collision_point = ball_y;
+			//int HEIGHT=HEIGHT+10*player1.getHeight();
+			//System.out.println("HEIGHT "+HEIGHT);
+
+
+			int heightA;
+			if(isExtended[0]){
+				heightA=HEIGHT+30;
+			}
+			else
+<<<<<<< HEAD
+				heightA=HEIGHT;
+
+
+			System.out.println("height "+heightA);
+			if (collision_point > player1.position - heightA - TOLERANCE && 
+			    collision_point < player1.position + heightA + TOLERANCE) {
+=======
+				height=HEIGHT;
+			//System.out.println("height "+height);
+			if (collision_point > player1.position - height - TOLERANCE && 
+			    collision_point < player1.position + height + TOLERANCE) {
+>>>>>>> 23fbb39b69ee3c9517c15a15eb82c5537b2e88fa
+				ball_x = 2 * (PADDING + WIDTH + RADIUS) - ball_x;
+				ball_x_speed = Math.abs (ball_x_speed);
+			//	if(Math.abs(ball_x_speed)>0.3){
+					System.out.println(ball_x_speed);
+				ball_y_speed -= Math.sin ((double)(player1.position - ball_y) / HEIGHT * Math.PI / 4)
+				                * Math.hypot (ball_x_speed, ball_y_speed) * 0.01;
+
+			//	}
+			//	else
+			//		ball_y_speed = -1*ball_y_speed;
+
+				if(springHit && playerNum.equals("p1"))
+				{
+					ball_x_speed*=1.5;
+					ball_y_speed*=1.5;
+					p1SpringHitsLeft--;
+				}
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+			}
+			else if(ball_x<PADDING+RADIUS+WIDTH && (((ball_y+RADIUS>=player1.position-HEIGHT) && (ball_y+RADIUS <= player1.position-HEIGHT+RADIUS)) || ((ball_y - RADIUS <=player1.position+HEIGHT) && (ball_y-RADIUS >= player1.position+HEIGHT- RADIUS ))) ){
+				ball_y_speed = -1*ball_y_speed;
+				if(springHit)
+					START_SPEED+=50; 
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+			}
+			else if((ball_x <= PADDING + RADIUS)){
+				player1.points --;
+				ball_x_speed = Math.abs (ball_x_speed);  
+				if(springHit)
+					START_SPEED+=50;           //To reflect the ball appropriately
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+
+			}
+		}
+		
+		// Border-collision RIGHT
+		//if ((ball_x >= getWidth() - PADDING - WIDTH - RADIUS && ball_y>= player2.position-HEIGHT && ball_y<= player2.position+HEIGHT) || (ball_x >= getWidth() - PADDING - RADIUS)) {
+		 else if ((ball_x >= getWidth() - PADDING - WIDTH - RADIUS)){
+			int collision_point;
+			if(ball_x_speed!=0)
+			collision_point = ball_y - (int)(ball_y_speed / ball_x_speed * (ball_x - getWidth() + PADDING + WIDTH + RADIUS));
+			else
+			collision_point = ball_y;
+			//int HEIGHT= HEIGHT+10*player2.getHeight();
+			//System.out.println("HEIGHT "+HEIGHT);
+			int heightB;
+			if(isExtended[1]){
+				heightB=HEIGHT+30;
+			}
+			else
+				heightB=HEIGHT;
+
+			if (collision_point > player2.position - heightB - TOLERANCE && 
+			    collision_point < player2.position + heightB + TOLERANCE) {
+				ball_x = 2 * (getWidth() - PADDING - WIDTH - RADIUS ) - ball_x;
+				ball_x_speed = -1 * Math.abs (ball_x_speed);
+			//	if(Math.abs(ball_x_speed)>0.3){
+					System.out.println(ball_x_speed);
+				ball_y_speed -= Math.sin ((double)(player2.position - ball_y) / HEIGHT * Math.PI / 4)           //some sort of spin here
+				                * Math.hypot (ball_x_speed, ball_y_speed) * 0.01;
+		//	}
+		//		else
+		//			ball_y_speed=-1*ball_y_speed;
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+
+				if(springHit && playerNum.equals("p2"))
+				{
+					ball_x_speed*=1.5;
+					ball_y_speed*=1.5;
+					p2SpringHitsLeft--;
+				}
+			}
+			else if(ball_x> getWidth()-(PADDING+RADIUS+WIDTH) && (((ball_y+RADIUS>=player2.position-HEIGHT) && (ball_y+RADIUS <= player2.position-HEIGHT+RADIUS)) || ((ball_y - RADIUS <=player2.position+HEIGHT) && (ball_y-RADIUS >= player2.position+HEIGHT-RADIUS))) ){
+				ball_y_speed = -1*ball_y_speed;
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+			}
+			else if(ball_x >= getWidth() - PADDING - RADIUS) {
+				player2.points --;
+				ball_x_speed = -1 * Math.abs (ball_x_speed);          //To reflect the ball appropriately
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+			}
+		}
+		
+		//Border collision BOTTOM
+		//if ((ball_y <= PADDING + WIDTH + RADIUS && ball_x>= player4.position-HEIGHT && ball_x<= player4.position+HEIGHT) || (ball_y >= PADDING + RADIUS)) {
+		else if ((ball_y <= PADDING + WIDTH + RADIUS)){
+			int collision_point;
+			if(ball_y_speed!=0)
+				 collision_point = ball_x + (int)(ball_x_speed / ball_y_speed * (PADDING + WIDTH + RADIUS - ball_y));
+			else
+				 collision_point = ball_x;
+			//according to height of each paddle	
+			//int height= HEIGHT+10*player3.getHeight();
+			//System.out.println("HEIGHT 3 "+height_3);
+			int heightC;
+			if(isExtended[2]){
+				heightC=HEIGHT+30;
+			}
+			else
+				heightC=HEIGHT;
+
+			if (collision_point > player3.position - heightC - TOLERANCE && 
+			    collision_point < player3.position + heightC + TOLERANCE) {
+				ball_y = 2 * (PADDING + WIDTH + RADIUS) - ball_y;
+				ball_y_speed = Math.abs (ball_y_speed);
+				if(!((ball_y < PADDING + WIDTH + RADIUS) && (ball_y>= PADDING + RADIUS)) && ball_y_speed>0.5){
+					System.out.println("here "+ball_y_speed);
+				ball_x_speed -= Math.sin ((double)(player3.position - ball_x) / HEIGHT * Math.PI / 4)
+				                * Math.hypot (ball_x_speed, ball_y_speed) * 0.01;
+				}else
+					ball_x_speed= -1*ball_x_speed;
+
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+
+				if(springHit && playerNum.equals("p3"))
+				{
+					ball_x_speed*=1.5;
+					ball_y_speed*=1.5;
+					p3SpringHitsLeft--;
+				}
+			}
+			else if(ball_y < (PADDING+RADIUS+WIDTH) && (((ball_x+RADIUS>=player3.position-HEIGHT) && (ball_x+RADIUS <= player3.position-HEIGHT+RADIUS)) || ((ball_x - RADIUS <=player3.position+HEIGHT) && (ball_x - RADIUS >= player3.position+ HEIGHT- RADIUS))) ){
+				System.out.println("YOlo");
+				ball_x_speed = -1*ball_x_speed;
+				ball_y_speed= 0;
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+			}
+			else if(ball_y <= PADDING + RADIUS) {
+				player3.points --;
+				ball_y_speed = Math.abs (ball_y_speed);             //To reflect the ball appropriately
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+			}
+		}
+		
+		// Border-collision TOP
+		//if ((ball_y >= getHeight() - PADDING - WIDTH - RADIUS && ball_x>= player3.position-HEIGHT && ball_x<= player3.position+HEIGHT) || (ball_y >= getHeight() - PADDING - RADIUS))  {
+		else if ((ball_y >= getHeight() - PADDING - WIDTH - RADIUS)){
+			int collision_point;
+			if(ball_y_speed!=0)
+			 collision_point = ball_x - (int)(ball_x_speed / ball_y_speed * (ball_y - getHeight() + PADDING + WIDTH + RADIUS));
+			else
+			 collision_point = ball_x;
+			int heightD;
+			if(isExtended[2]){
+				heightD=HEIGHT+30;
+			}
+			else
+				heightD=HEIGHT;
+			//int HEIGHT= HEIGHT+ 10*player4.getHeight();
+			//System.out.println("HEIGHT "+HEIGHT);
+			int height;
+			if (collision_point > player4.position - heightD - TOLERANCE && 
+			    collision_point < player4.position + heightD + TOLERANCE) {
+				ball_y = 2 * (getHeight() - PADDING - WIDTH - RADIUS ) - ball_y;
+				ball_y_speed = -1 * Math.abs (ball_y_speed);
+				//for grazing collison
+				//if(Math.abs(ball_y_speed)>0.3){
+					System.out.println(ball_y_speed);
+				ball_x_speed -= Math.sin ((double)(player4.position - ball_x) / HEIGHT * Math.PI / 4)
+				                * Math.hypot (ball_x_speed, ball_y_speed) * 0.01;
+				//}
+				//else
+				//	ball_x_speed= -1*ball_x_speed;
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+
+				if(springHit && playerNum.equals("p4"))
+				{
+					ball_x_speed*=1.5;
+					ball_y_speed*=1.5;
+					p4SpringHitsLeft--;
+				}
+			}
+			else if(ball_y < getHeight()-(PADDING+RADIUS+WIDTH) && (((ball_x+RADIUS>=player3.position-HEIGHT) && (ball_x+RADIUS <= player3.position-HEIGHT+RADIUS)) || ((ball_x - RADIUS <=player3.position+HEIGHT) && (ball_x - RADIUS >= player3.position+HEIGHT- RADIUS))) ){
+				ball_x_speed = -1*ball_x_speed;
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+			}
+			else if(ball_y >= getHeight() - PADDING - RADIUS){
+				player4.points --;
+				ball_y_speed = -1 * Math.abs (ball_y_speed);          //To reflect the ball appropriately
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+			}
+		}
+
+		else{
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+		}
+
+		// reflection from corner traingles after reflection increase in speed accordingly
+		/*if((ball_x <50 && ball_y <50) || (ball_x > getWidth()-50 && ball_y < 50) || (ball_x <50 && ball_y > getHeight()-50) || (ball_x > getWidth()-50 &&  ball_y > getHeight()-50))
+		{
+			ball_y_speed = -1 * Math.abs (ball_y_speed);
+				ball_x_speed -= Math.sin ((double)(player4.position - ball_x) / HEIGHT * Math.PI / 4)
+				                * Math.hypot (ball_x_speed, ball_y_speed) * 0.01;
+				if (player4.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player4);
+				if (player3.getType() == Player.CPU_HARD_Y)
+					computeDestinationY (player3);
+				if (player2.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player2);
+				if (player1.getType() == Player.CPU_HARD_X)
+					computeDestinationX (player1);
+		}*/
+		// Border-collision TOP
+		/*if (ball_y <= RADIUS) {
+			ball_y_speed = Math.abs (ball_y_speed);
+			ball_y = 2 * RADIUS - ball_y;
+		}
+		
+		// Border-collision BOTTOM
+		if (ball_y >= getHeight() - RADIUS) {
+			ball_y_speed = -1 * Math.abs (ball_y_speed);
+			ball_y = 2 * (getHeight() - RADIUS) - ball_y;
+		}*/
+		
+		// Disegna i carrelli
+		triangleShape1 = new TriangleShape(
+                    new Point2D.Double(0, 0),
+                    new Point2D.Double(TRIANGLE_SIZE,0),
+                    new Point2D.Double(0, TRIANGLE_SIZE)
+            );
+
+    	 triangleShape2 = new TriangleShape(
+                    new Point2D.Double(getWidth()-TRIANGLE_SIZE, 0),
+                    new Point2D.Double(getWidth(), 0),
+                    new Point2D.Double(getWidth(), TRIANGLE_SIZE)
+            );
+    	 triangleShape3 = new TriangleShape(
+                    new Point2D.Double(0,getHeight()),
+                    new Point2D.Double(0, getHeight()-TRIANGLE_SIZE),
+                    new Point2D.Double(TRIANGLE_SIZE,getHeight())
+            );
+    	 triangleShape4 = new TriangleShape(
+                    new Point2D.Double(getWidth(), getHeight()),
+                    new Point2D.Double(getWidth()-TRIANGLE_SIZE, getHeight()),
+                    new Point2D.Double(getWidth(), getHeight()-TRIANGLE_SIZE)
+            );
+		g.setColor (new Color(45,92,239));
+		if(playerNum.equals("p1") && springHit && p1SpringHitsLeft>0)
+			g.setColor (new Color(255,255,0));
+		
+		int height1=HEIGHT;
+		if(isExtended[0]){
+			height1=HEIGHT+30;
+		}
+
+		g.fillRect (PADDING, player1.position - height1, WIDTH, (height1) * 2);
+		g.setColor (new Color(45,92,239));
+		if(playerNum.equals("p2") && springHit && p2SpringHitsLeft>0)
+			g.setColor (new Color(255,255,0));
+		int height2=HEIGHT;
+		if(isExtended[1]){
+			height2=HEIGHT+30;
+		}
+
+		g.fillRect (getWidth() - PADDING - WIDTH, player2.position - height2, WIDTH, (height2) * 2);
+		g.setColor (new Color(45,92,239));
+
+		int height3 = HEIGHT;
+		if(isExtended[2]){
+			height3=HEIGHT+30;
+		}
+
+		if(playerNum.equals("p3") && springHit && p3SpringHitsLeft>0)
+			g.setColor (new Color(255,255,0));
+		g.fillRect (player3.position - height3, PADDING, (height3)*2, WIDTH);
+		g.setColor (new Color(45,92,239));
+		int height4 = HEIGHT;
+		if(isExtended[3]){
+			height4=HEIGHT+30;
+		}
+		if(playerNum.equals("p4") && springHit && p4SpringHitsLeft>0)
+			g.setColor (new Color(255,255,0));
+		g.fillRect (player4.position - height4, getHeight() - PADDING - WIDTH, (height4)*2, WIDTH);
+		g.setColor (new Color(45,92,239));
+		// Disegna la palla
+		g.setColor (new Color(0,204,0));
+		g.fillOval (ball_x - RADIUS, ball_y - RADIUS, RADIUS*2, RADIUS*2);
+		
+
+		Graphics2D g2d = (Graphics2D) g.create();
+            g2d.setColor (new Color(255,51,51));
+            //g2d.fill(poly);
+           // g2d.translate(50, 100);
+            g2d.fill(triangleShape1);
+            g2d.fill(triangleShape2);
+            g2d.fill(triangleShape3);
+            g2d.fill(triangleShape4);
+            g2d.dispose();
+		// Disegna i punti
+        g.setColor(Color.WHITE);
+        if(!playerNum.equals(currentServer))
+        {
+			player1.points = scores[0];
+			player2.points = scores[1];
+			player3.points = scores[2];
+			player4.points = scores[3];	
+		}
+		g.drawString (player1.points+" ", 50, getHeight()/2);
+		g.drawString (player2.points+" ", getWidth() - 50, getHeight()/2);
+		g.drawString(player3.points+" ", getWidth()/2, 50);
+		g.drawString(player4.points+" ", getWidth()/2, getHeight() - 50);
+	}
+	public class TriangleShape extends Path2D.Double {
+
+        public TriangleShape(Point2D... points) {
+            moveTo(points[0].getX(), points[0].getY());
+            lineTo(points[1].getX(), points[1].getY());
+            lineTo(points[2].getX(), points[2].getY());
+            closePath();
+        }
+
+    }
+	// New frame
+	public void actionPerformed (ActionEvent e) {
+		repaint ();
+	}
+	
+	// Mouse inside
+	public void mouseEntered (MouseEvent e) {
+		mouse_inside = true;
+	}
+	
+	// Mouse outside
+	public void mouseExited (MouseEvent e) {
+		mouse_inside = false;
+	}
+	
+	// Mouse pressed
+	public void mousePressed (MouseEvent e) {}
+	
+	// Mouse released
+	public void mouseReleased (MouseEvent e) {}
+		
+	// Mouse clicked
+	public void mouseClicked (MouseEvent e) {}
+	
+	// Key pressed
+	public void keyPressed (KeyEvent e) {
+//		System.out.println ("Pressed "+e.getKeyCode()+"   "+KeyEvent.VK_UP+" "+KeyEvent.VK_DOWN);
+		if (e.getKeyCode() == KeyEvent.VK_UP)
+			key_up = true;
+		else if (e.getKeyCode() == KeyEvent.VK_DOWN)
+			key_down = true;
+		else if (e.getKeyCode() == KeyEvent.VK_LEFT)
+			key_left = true;
+		else if (e.getKeyCode() == KeyEvent.VK_RIGHT)
+			key_right = true;
+		else if (e.getKeyCode() == KeyEvent.VK_SPACE && numberOfSpringHits>0)
+			springHit = true;
+		else if(e.getKeyCode()== KeyEvent.VK_ENTER){
+			System.out.println("numberOfframes "+numberOfframes);
+			paddle_size= true;
+			System.out.println("true");
+		}
+	}
+	
+	// Key released
+	public void keyReleased (KeyEvent e) {
+//		System.out.println ("Released "+e.getKeyCode());
+		if (e.getKeyCode() == KeyEvent.VK_UP)
+			key_up = false;
+		else if (e.getKeyCode() == KeyEvent.VK_DOWN)
+			key_down = false;
+		else if (e.getKeyCode() == KeyEvent.VK_LEFT)
+			key_left = false;
+		else if (e.getKeyCode() == KeyEvent.VK_RIGHT)
+			key_right = false;
+		else if (e.getKeyCode() == KeyEvent.VK_SPACE)
+			springHit = false;
+		else if(e.getKeyCode()== KeyEvent.VK_ENTER)
+			paddle_size= false;
+	}
+	
+	// Key released
+	public void keyTyped (KeyEvent e) {}
+}
